@@ -1,0 +1,45 @@
+name: oracle-cron
+
+# Runs the two cron triggers for the V3 Bet sports-oracle:
+#   - /cron/results every 10 min (tracked-set fast path)
+#   - /cron/sweep   every 30 min (bounded last-50 backstop)
+#
+# GitHub Actions scheduled workflows are best-effort; expect occasional
+# 5–15 min lag during peak hours. That's fine here — the oracle is
+# idempotent and a delayed propose just means a delayed settlement, not
+# a correctness issue.
+#
+# Required repo configuration:
+#   - Settings → Secrets and variables → Actions → Secrets:
+#       CRON_SECRET   (must match the Vercel env var of the same name)
+#   - Settings → Secrets and variables → Actions → Variables:
+#       ORACLE_URL    (e.g. https://sports-oracle-xxx.vercel.app — no trailing slash)
+on:
+  schedule:
+    - cron: '*/10 * * * *'   # /cron/results
+    - cron: '*/30 * * * *'   # /cron/sweep
+  workflow_dispatch:         # manual "Run workflow" button in the Actions tab
+
+jobs:
+  results:
+    # Fires on the 10-min schedule, OR on a manual dispatch (so the dispatch
+    # button exercises both endpoints).
+    if: github.event.schedule == '*/10 * * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit /cron/results
+        run: |
+          curl --fail-with-body --retry 3 --retry-all-errors --max-time 60 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.ORACLE_URL }}/cron/results"
+
+  sweep:
+    # Fires on the 30-min schedule. Manual dispatch runs both jobs.
+    if: github.event.schedule == '*/30 * * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit /cron/sweep
+        run: |
+          curl --fail-with-body --retry 3 --retry-all-errors --max-time 120 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.ORACLE_URL }}/cron/sweep"
