@@ -6,12 +6,49 @@
 // unified P2PBetting contract, and store the mapping. Per-fixture in-process
 // lock prevents two simultaneous picks from double-creating.
 
-import { contract } from './chain.js'
+import { contract, readContract } from './chain.js'
 import { fetchFixtureById, fixtureStartSeconds } from './allSportsApi.js'
 import { leagueExists, MIN_FIXTURE_LEAD_SECONDS } from './config.js'
 import { kv, keys } from './kv.js'
 
 const inflight = new Map() // apiFixtureId -> Promise
+
+// Pre-flight: see whether a matching Game already exists on-chain in this
+// league. The contract reverts DuplicateGame if (team1, team2, startTime)
+// matches an upcoming game in the last-20 window — when KV is empty (fresh
+// Upstash, redeploy, etc.) but the game was created in a prior session,
+// we'd otherwise lose the gas and bubble the revert up to the user. Scan
+// the last 50 to cover the contract's window plus a safety margin.
+async function findExistingGame(leagueId, team1, team2, startTime) {
+  let indices = []
+  try {
+    const raw = await readContract.getGamesByLeague(BigInt(leagueId))
+    indices = (raw || []).map((x) => Number(x))
+  } catch (err) {
+    console.warn('[ensureGame] getGamesByLeague failed:', err?.message)
+    return null
+  }
+  const startScan = Math.max(0, indices.length - 50)
+  for (let j = indices.length - 1; j >= startScan; j--) {
+    const gameId = indices[j]
+    let g
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      g = await readContract.getGame(BigInt(gameId))
+    } catch (_) {
+      continue
+    }
+    if (!g) continue
+    if (
+      g.team1 === team1 &&
+      g.team2 === team2 &&
+      Number(g.startTime) === Number(startTime)
+    ) {
+      return gameId
+    }
+  }
+  return null
+}
 
 async function doEnsure(leagueId, apiFixtureId) {
   // Cache hit — already mapped.
@@ -41,6 +78,35 @@ async function doEnsure(leagueId, apiFixtureId) {
   const nowSec = Math.floor(Date.now() / 1000)
   if (startTime - nowSec < MIN_FIXTURE_LEAD_SECONDS) {
     throw new Error('Fixture is too close to kickoff to be added on-chain')
+  }
+
+  // KV miss doesn't always mean the on-chain game doesn't exist — KV may
+  // have been wiped (fresh Upstash, redeploy) or the game may have been
+  // created via the admin panel. Probe the contract for a matching game
+  // before spending gas on createGame; reuse + backfill mappings if found.
+  const existingGameId = await findExistingGame(leagueId, team1, team2, startTime)
+  if (existingGameId != null) {
+    await kv.set(keys.fixtureMap(apiFixtureId), {
+      gameId: existingGameId,
+      leagueId,
+      team1,
+      team2,
+      startTime,
+      createdAt: Date.now(),
+    })
+    await kv.set(keys.gameToFixture(existingGameId), { apiFixtureId, leagueId })
+    // Eagerly track so the cron picks it up on the next tick.
+    await kv.set(keys.trackedItem(apiFixtureId), {
+      apiFixtureId,
+      gameId: existingGameId,
+      leagueId,
+      startTime,
+      team1,
+      team2,
+      addedAt: Date.now(),
+    })
+    await kv.sadd(keys.trackedSet(), String(apiFixtureId))
+    return { gameId: existingGameId, alreadyExisted: true }
   }
 
   // Send createGame. We rely on the contract's DuplicateGame revert if a
