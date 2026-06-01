@@ -1,0 +1,24 @@
+# Dependency vulnerability audit.
+# Runs on every push/PR and weekly, failing the job on high/critical advisories.
+name: Security audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly, Monday 06:00 UTC.
+    - cron: "0 6 * * 1"
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      # Verifies the committed lockfile installs cleanly and reproducibly.
+      - run: npm ci
+      # Fails the build on high / critical advisories.
+      - run: npm audit --audit-level=high
