@@ -38,6 +38,15 @@ export const ALLOWED_ORIGINS = (
   .map((s) => s.trim())
   .filter(Boolean)
 
+// Resend — used to send withdrawal verification codes (#2) and new-device
+// sign-in alerts (#5b). Treated as optional: if RESEND_API_KEY is missing,
+// the email-sending helpers fall back to console.warn so dev still works.
+export const RESEND_API_KEY = process.env.RESEND_API_KEY || ''
+export const RESEND_FROM_EMAIL =
+  process.env.RESEND_FROM_EMAIL || 'V3 Bet <onboarding@resend.dev>'
+export const PUBLIC_APP_URL =
+  process.env.PUBLIC_APP_URL || ALLOWED_ORIGINS[0] || 'https://v3bet.xyz'
+
 // Registered leagues. The set MUST match what's been added on-chain via
 // `addLeague(leagueId, name)`. Keep this in sync with
 // `scripts/add-all-leagues.js` at the repo root.

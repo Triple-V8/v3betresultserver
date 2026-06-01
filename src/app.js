@@ -13,6 +13,11 @@ import { fixturesHandler, fixtureCountsHandler } from './fixtures.js'
 import { ensureGameHandler } from './ensureGame.js'
 import { trackGameHandler } from './trackGame.js'
 import { resultsCronHandler, sweepCronHandler } from './resultsCron.js'
+import {
+  requestWithdrawCodeHandler,
+  verifyWithdrawCodeHandler,
+} from './authWithdraw.js'
+import { registerDeviceHandler } from './authDevice.js'
 
 const app = express()
 app.use(express.json({ limit: '256kb' }))
@@ -43,6 +48,11 @@ app.get('/fixtures/counts', fixtureCountsHandler)
 // ── Mutating endpoints called by the frontend ───────────────────────────
 app.post('/games/ensure', ensureGameHandler)
 app.post('/games/track', trackGameHandler)
+
+// ── Auth: email-code re-auth for new withdrawal addresses + new-device alerts ─
+app.post('/auth/withdraw/request-code', requestWithdrawCodeHandler)
+app.post('/auth/withdraw/verify-code', verifyWithdrawCodeHandler)
+app.post('/auth/device/register', registerDeviceHandler)
 
 // ── Cron — Vercel hits these on the schedules in vercel.json ────────────
 // `/cron/results`: every 10 min — processes the KV trackedSet (the fast

@@ -104,4 +104,22 @@ export const keys = {
    *  Used by the cron's on-chain backstop sweep to recover apiFixtureId for
    *  games whose trackedItem fell out of KV. */
   gameToFixture: (gameId) => `game:${gameId}`,
+
+  // ── Email-code re-auth for withdrawals (#2) ─────────────────────────────
+  /** Active 6-digit code for an (email, destination) pair. TTL ~10 min via
+   *  attached `expiresAt`; value = { codeHash, attemptsLeft, amount, expiresAt }. */
+  withdrawCode: (email, destination) =>
+    `wd:code:${email.toLowerCase()}:${destination.toLowerCase()}`,
+  /** Per-email rate-limit bucket for /auth/withdraw/request-code */
+  withdrawCodeRateLimit: (email) => `wd:rl:${email.toLowerCase()}`,
+  /** Set of trusted destinations the user has previously confirmed via email
+   *  code. Looked up by both endpoints to decide whether a fresh code is
+   *  needed. */
+  withdrawTrusted: (email) => `wd:trusted:${email.toLowerCase()}`,
+
+  // ── Device tracking for new-device alerts (#5b) ──────────────────────────
+  /** Set of deviceIds we've seen for this email. */
+  devicesSeen: (email) => `dev:seen:${email.toLowerCase()}`,
+  /** Per-email rate-limit bucket for /auth/device/register */
+  deviceRateLimit: (email) => `dev:rl:${email.toLowerCase()}`,
 }
